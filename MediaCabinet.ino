@@ -1,10 +1,11 @@
 
 // Libraries
-#include <NewTone.h>
 #include <Wire.h>
-// #include <TM1637Display.h>
-#include <SevenSegmentTM1637.h>
 #include <Rotary.h>
+
+#include "Screen.h"
+#include "Fan.h"
+#include "Speaker.h"
 
 // Config
 #define SERIAL_BAUD_RATE        9600
@@ -30,158 +31,150 @@
 #define PIN_ROTARY_SW           4
 
 // Modules
-SevenSegmentTM1637 display(PIN_DISPLAY_CLK, PIN_DISPLAY_DIO);
 Rotary rotary = Rotary(PIN_ROTARY_A, PIN_ROTARY_B);
 
+Screen screen = Screen(PIN_DISPLAY_CLK, PIN_DISPLAY_DIO);
+Fan fan = Fan(PIN_FAN_PWM, PIN_FAN_RPM);
+//Sensors sensors = Sensors(PIN_TMP_0, PIN_TMP_1, PIN_TMP_2, PIN_TMP_3);
+Speaker speaker = Speaker(PIN_PIEZO_BUZZER);
+
+
 // Globals
-int currentTempSensor = 0;
-int currentFanSpeed = 0;
-int highestTempSensor = 0;
-int highestTempValue = 0;
-bool highTemperature = false;
+// int currentTempSensor = 0;
+// int currentFanSpeed = 0;
+// int highestTempSensor = 0;
+// int highestTempValue = 0;
+// bool highTemperature = false;
 
-int numTempSensors = 4;
-float temperatures[4] = {0, 0, 0, 0};
+// int numTempSensors = 4;
+// float temperatures[4] = {0, 0, 0, 0};
 
+bool monitorPaused = false;
 unsigned long previousRotate = 0;
+unsigned long previousClick = 0;
 unsigned long previousTempRefresh = 0;
 unsigned long previousTempSensorChange = 0;
 unsigned long previousFanSpeedRefresh = 0;
 unsigned long previousFanSpeedChange = 0;
 
+
 // Setup
 void setup() {
-    // Pin modes
-    pinMode(PIN_FAN_RPM, INPUT_PULLUP);
-    pinMode(PIN_ROTARY_SW, INPUT_PULLUP);
-    pinMode(PIN_PIEZO_BUZZER, OUTPUT);
-
     // Serial
     Serial.begin(SERIAL_BAUD_RATE);
+    Serial.println("Initializing...");
 
-    // Display
-    display.begin();
-    display.setBacklight(100);
-    display.clear();
+    // Setup modules
+    screen.setup();
+    fan.setup();
+    speaker.setup();
 
-    // Fan
-    setFanSpeed(20);
-
-    // Speaker
-    NewTone(PIN_PIEZO_BUZZER, 1000, 100);
-
-    // Ready
-    Serial.println("READY");
+    // Init
+    pinMode(PIN_ROTARY_SW, INPUT_PULLUP);
 }
 
 // Loop
 void loop() {
     // Timer
     long currentMillis = millis();
-    
-    // Rotary control
-    // ==============================================================================
-    unsigned char result = rotary.process();
+        
+    //  Rotary control
+    // --------------------------------------------------------------------
+    unsigned char rotaryDirection = rotary.process();
 
     bool rotaryButtonClicked = false;
     if (digitalRead(PIN_ROTARY_SW) == LOW) rotaryButtonClicked = true;
 
-    if ((result == DIR_CW) || (result == DIR_CCW)) {
+    // Control
+    if ((rotaryDirection == DIR_CW) || (rotaryDirection == DIR_CCW)) {
         previousRotate = currentMillis;
 
         // Fan speed controller
-        // ----------------------------------------------------------------------
         if (!rotaryButtonClicked) {
+            // Current speed level
+            int speedLevel = fan.getSpeedLevel();
+
             // Up
-            if (result == DIR_CW) {
-                Serial.print("ROTARY UP CLICKED, increasing speed to ");
-                currentFanSpeed += 5;
-                if (currentFanSpeed > 100) currentFanSpeed = 100;
-                Serial.print(currentFanSpeed);
-                Serial.println(" %");
+            if (rotaryDirection == DIR_CW) {
+                speedLevel += 5;
+                if (speedLevel > 100) speedLevel = 100;
             }
             // Down
-            else if (result == DIR_CCW) {
-                Serial.print("ROTARY UP CLICKED, decreasing speed to ");
-                currentFanSpeed -= 5;
-                if (currentFanSpeed < 0) currentFanSpeed = 0;
-                Serial.print(currentFanSpeed);
-                Serial.println(" %");
+            else if (rotaryDirection == DIR_CCW) {
+                speedLevel -= 5;
+                if (speedLevel < 0) speedLevel = 0;
             }
 
-            display.clear();
-            display.setCursor(0, 0);
-            display.print("F");
-            display.setCursor(0, ((currentFanSpeed < 100) ? 2 : 1));
-            display.print(currentFanSpeed);
+            // Set speed level
+            if (speedLevel != fan.getSpeedLevel()) {
+                fan.setSpeedLevel(speedLevel);
 
-            //display.showNumberDec(currentFanSpeed, false, 4, 0);
-            setFanSpeed(currentFanSpeed);
+                if (currentMillis - previousClick > 5000) {
+                    screen.showFanSpeedLevel(fan.getSpeedLevel());
+                }
+            }
+
             previousFanSpeedChange = currentMillis;
-            previousTempSensorChange = currentMillis;
         }
+    }
+    else {
+        // Cycle all sensor temperatures
+        if (rotaryButtonClicked && (currentMillis - previousClick >= 5000)) {
+            monitorPaused = true;
 
-        // Temperature sensor select
-        // ----------------------------------------------------------------------
-        else {
-            // Up
-            if (result == DIR_CW) {
-                currentTempSensor++;
-                if (currentTempSensor > 3) currentTempSensor = 0;
-                Serial.print("ROTARY UP, selecting sensor #");
-                Serial.println(currentTempSensor);
-            }
-            // Down
-            else if (result == DIR_CCW) {
-                currentTempSensor--;
-                if (currentTempSensor < 0) currentTempSensor = 3;
-                Serial.print("ROTARY DOWN, selecting sensor #");
-                Serial.println(currentTempSensor);
-            }
+            speaker.beep();
+            screen.cycleTemperatureSensors();
 
-            display.clear();
-            display.setCursor(0, 0);
-            display.print("S");
-            display.setCursor(0, 3);
-            display.print((currentTempSensor + 1));
-            
-            previousTempSensorChange = currentMillis;
+            previousClick = currentMillis;
         }
     }
 
-    // Display
-    // ==============================================================================
+    //  State machine(?)
+    // --------------------------------------------------------------------
     if ((currentMillis - previousRotate > 1000) && !rotaryButtonClicked) {
-        if (currentMillis - previousFanSpeedChange <= 3000) {
+        // Show fan speed after level change
+        if (currentMillis - previousFanSpeedChange <= 5000) {
             if (currentMillis - previousFanSpeedRefresh >= 500) {
-                int rpm = readFanSpeed();
-                Serial.println("REFRESH RPM");
-                display.clear();
-                display.print(rpm);
-                //display.showNumberDec(rpm, false, 4, 0);
+                // Update display
+                screen.showFanSpeed(fan.getSpeed());
                 previousFanSpeedRefresh = currentMillis;
             }
         }
 
         // Display current temperature sensor
         if ((currentMillis - previousTempSensorChange >= 1500) && 
-                (currentMillis - previousFanSpeedRefresh >= 3000)) {
+                (currentMillis - previousFanSpeedRefresh >= 5000)) {
 
-            int temperature = temperatures[currentTempSensor];
+            // int temperature = temperatures[currentTempSensor];
 
-            Serial.print("REFRESH tmp. sensor #");
-            Serial.print(currentTempSensor);
-            Serial.print(" = ");
-            Serial.println(temperature);
+            // Serial.print("REFRESH tmp. sensor #");
+            // Serial.print(currentTempSensor);
+            // Serial.print(" = ");
+            // Serial.println(temperature);
 
-            display_degrees(temperature, (currentTempSensor + 1));
+            // display_degrees(temperature, (currentTempSensor + 1));
 
-            previousTempSensorChange = currentMillis;
+            // previousTempSensorChange = currentMillis;
         }
     }
 
     // Refresh all temperatures
     if (currentMillis - previousTempRefresh >= 10000) {
+        if (!monitorPaused) {
+            Serial.println("REFRESH all tmp. sensors");
+
+            screen.showTemperature(25, -1);
+        } 
+        else {
+            Serial.println("Monitor paused, not updating temperatures");
+        }
+
+        previousTempRefresh = currentMillis;
+    }
+}
+
+
+        /*
         Serial.println("REFRESH all tmp. sensors");
         
         updateTemperatures();
@@ -213,25 +206,72 @@ void loop() {
 
         currentTempSensor = highestTempSensor;
 
-        /*
-        if ((currentTempValue0 > TEMP_ALERT_LEVEL) || (currentTempValue1 > TEMP_ALERT_LEVEL)
-                || (currentTempValue2 > TEMP_ALERT_LEVEL) || (currentTempValue3 > TEMP_ALERT_LEVEL)) {
-            highTemperature = true;
+        
+        //if ((currentTempValue0 > TEMP_ALERT_LEVEL) || (currentTempValue1 > TEMP_ALERT_LEVEL)
+        //        || (currentTempValue2 > TEMP_ALERT_LEVEL) || (currentTempValue3 > TEMP_ALERT_LEVEL)) {
+        //    highTemperature = true;
 
             // Activate buzzer
-            Serial.println("TEMPERATURE ALARM!");
-            NewTone(PIN_PIEZO_BUZZER, 1000, 100);
+        //    Serial.println("TEMPERATURE ALARM!");
+        //    NewTone(PIN_PIEZO_BUZZER, 1000, 100);
 
-            if (currentTempValue0 > TEMP_ALERT_LEVEL) currentTempSensor = 0;
-            if (currentTempValue1 > TEMP_ALERT_LEVEL) currentTempSensor = 1;
-            if (currentTempValue2 > TEMP_ALERT_LEVEL) currentTempSensor = 2;
-            if (currentTempValue3 > TEMP_ALERT_LEVEL) currentTempSensor = 3;
-        }*/
+        //    if (currentTempValue0 > TEMP_ALERT_LEVEL) currentTempSensor = 0;
+        //    if (currentTempValue1 > TEMP_ALERT_LEVEL) currentTempSensor = 1;
+        //    if (currentTempValue2 > TEMP_ALERT_LEVEL) currentTempSensor = 2;
+        //    if (currentTempValue3 > TEMP_ALERT_LEVEL) currentTempSensor = 3;
+        //}
+        /*
 
         previousTempRefresh = currentMillis;
     }
-}
 
+
+    /*
+    // Rotary control
+    // ==============================================================================
+    
+
+    if ((result == DIR_CW) || (result == DIR_CCW)) {
+        previousRotate = currentMillis;
+
+        // Fan speed controller
+        // ----------------------------------------------------------------------
+        if (!rotaryButtonClicked) {
+            
+        }
+
+        // Temperature sensor select
+        // ----------------------------------------------------------------------
+        else {
+            // Up
+            if (result == DIR_CW) {
+                currentTempSensor++;
+                if (currentTempSensor > 3) currentTempSensor = 0;
+                Serial.print("ROTARY UP, selecting sensor #");
+                Serial.println(currentTempSensor);
+            }
+            // Down
+            else if (result == DIR_CCW) {
+                currentTempSensor--;
+                if (currentTempSensor < 0) currentTempSensor = 3;
+                Serial.print("ROTARY DOWN, selecting sensor #");
+                Serial.println(currentTempSensor);
+            }
+
+            display.clear();
+            display.setCursor(0, 0);
+            display.print("S");
+            display.setCursor(0, 3);
+            display.print((currentTempSensor + 1));
+            
+            previousTempSensorChange = currentMillis;
+        }
+    */
+
+
+
+
+/*
 // Display degrees
 void display_degrees(int temperature, int sensor) {
     int col = 0;
@@ -303,3 +343,5 @@ int readFanSpeed() {
     }
     return rpm;
 }
+
+*/
