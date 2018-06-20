@@ -16,6 +16,11 @@ void Fan::setup() {
     this->setSpeedLevel(0);
 }
 
+// Process
+void Fan::process() {
+    
+}
+
 // Set fan speed level
 int Fan::setSpeedLevel(int percent) {
     if (percent >= 0 && percent <= 100) {

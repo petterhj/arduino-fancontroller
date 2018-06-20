@@ -9,6 +9,7 @@ class Fan
   public:
     Fan(int fanPwmPin, int fanRpmPin);
     void setup();
+    void process();
     int setSpeedLevel(int percent);
     int getSpeedLevel();
     int getSpeed();
