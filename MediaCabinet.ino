@@ -6,6 +6,7 @@
 #include "Screen.h"
 #include "Fan.h"
 #include "Speaker.h"
+#include "Temperature.h"
 
 // Config
 #define SERIAL_BAUD_RATE        9600
@@ -30,15 +31,6 @@
 #define PIN_ROTARY_B            5
 #define PIN_ROTARY_SW           4
 
-// Modules
-Rotary rotary = Rotary(PIN_ROTARY_A, PIN_ROTARY_B);
-
-Screen screen = Screen(PIN_DISPLAY_CLK, PIN_DISPLAY_DIO);
-Fan fan = Fan(PIN_FAN_PWM, PIN_FAN_RPM);
-//Sensors sensors = Sensors(PIN_TMP_0, PIN_TMP_1, PIN_TMP_2, PIN_TMP_3);
-Speaker speaker = Speaker(PIN_PIEZO_BUZZER);
-
-
 // Globals
 // int currentTempSensor = 0;
 // int currentFanSpeed = 0;
@@ -49,13 +41,22 @@ Speaker speaker = Speaker(PIN_PIEZO_BUZZER);
 // int numTempSensors = 4;
 // float temperatures[4] = {0, 0, 0, 0};
 
+int sensorCount = 4;
+int sensorPins[4] = {PIN_TMP_0, PIN_TMP_1, PIN_TMP_2, PIN_TMP_3};
 bool speedChanged = false;
-bool forceTempRefresh = false;
-int previousFanSpeed = 0;
+bool forceTempRefresh = true;
 unsigned long previousRotate = 0;
 unsigned long previousTempRefresh = 0;
 unsigned long previousFanSpeedRefresh = 0;
 unsigned long previousFanSpeedChange = 0;
+
+// Modules
+Rotary rotary = Rotary(PIN_ROTARY_A, PIN_ROTARY_B);
+
+Fan fan = Fan(PIN_FAN_PWM, PIN_FAN_RPM);
+Temperature temperature = Temperature(sensorCount, sensorPins);
+Screen screen = Screen(PIN_DISPLAY_CLK, PIN_DISPLAY_DIO);
+Speaker speaker = Speaker(PIN_PIEZO_BUZZER);
 
 
 // Setup
@@ -65,12 +66,14 @@ void setup() {
     Serial.println("Initializing...");
 
     // Setup modules
-    screen.setup();
     fan.setup();
+    temperature.setup();
+    screen.setup();
     speaker.setup();
 
     // Init
     pinMode(PIN_ROTARY_SW, INPUT_PULLUP);
+    delay(2000);
 }
 
 // Loop
@@ -106,16 +109,25 @@ void loop() {
             }
 
             // Set speed level
+            Serial.print("Rotary control, fan speed level ");
+            Serial.print(speedLevel);
+
             if (speedLevel != fan.getSpeedLevel()) {
+                Serial.println(" (changed)");
                 fan.setSpeedLevel(speedLevel);
                 screen.showFanSpeedLevel(fan.getSpeedLevel());
                 speedChanged = true;
             } else {
+                Serial.println(" (NOT changed)");
                 screen.showFanSpeedLevel(fan.getSpeedLevel());
-                delay(300);
-                forceTempRefresh = true;
+                delay(500);
+                speedChanged = true;
+
+                if (currentMillis - previousFanSpeedChange > 3000) {
+                    speedChanged = false;
+                    forceTempRefresh = true;
+                }
             }
-            
             
             previousFanSpeedChange = currentMillis;
         }
@@ -125,16 +137,12 @@ void loop() {
         if (rotaryButtonClicked) {
 
             speaker.beep();
-            // screen.cycleTemperatureSensors();
-            screen.showTemperature(10, 1);
-            delay(1500);
-            screen.showTemperature(15, 2);
-            delay(1500);
-            screen.showTemperature(20, 3);
-            delay(1500);
-            screen.showTemperature(25, 4);
-            delay(1500);
-            screen.showTemperature(25, -1);
+            
+            for (int i = 0; i < temperature.sensorCount; i++) {
+                screen.showTemperature(temperature.read(i), (i + 1));
+                delay(1500);
+            }
+            screen.showTemperature(temperature.highestTemperature, -1);
             delay(500);
         }
     }
@@ -146,13 +154,8 @@ void loop() {
         if (currentMillis - previousFanSpeedChange <= 5000) {
             if (currentMillis - previousFanSpeedRefresh >= 250) {
                 // Update display
-                int currentSpeed = fan.getSpeed();
-
-                if (previousFanSpeed != currentSpeed) { 
-                    screen.showFanSpeed(currentSpeed);
-                }
-
-                previousFanSpeed = currentSpeed;
+                screen.showFanSpeed(fan.getSpeed());
+                
                 previousFanSpeedRefresh = currentMillis;
             }
         }
@@ -162,11 +165,11 @@ void loop() {
     if (forceTempRefresh || ((currentMillis - previousTempRefresh >= 10000) && 
         (currentMillis - previousFanSpeedChange > 5000))) {
         
-        Serial.println("REFRESH all tmp. sensors");
-        screen.showTemperature(25, -1);
+        temperature.readAll();
+
+        screen.showTemperature(temperature.highestTemperature, -1);
 
         forceTempRefresh = false;
-        previousFanSpeed = 0;
         previousTempRefresh = currentMillis;
     }
 }

@@ -13,7 +13,7 @@ Fan::Fan(int fanPwmPin, int fanRpmPin) {
 void Fan::setup() {
     pinMode(this->fanRpmPin, INPUT_PULLUP);
 
-    this->setSpeedLevel(0);
+    this->setSpeedLevel(10);
 }
 
 // Process

@@ -2,6 +2,7 @@
 #define Screen_h
 
 #include "Arduino.h"
+#include "math.h"
 #include "SevenSegmentTM1637.h"
 
 
@@ -12,7 +13,7 @@ class Screen
     void setup();
     void showFanSpeedLevel(int level);
     void showFanSpeed(int speed);
-    void showTemperature(int temperature, int sensor);
+    void showTemperature(float temperature, int sensor);
     void cycleTemperatureSensors();
 
     SevenSegmentTM1637* display;

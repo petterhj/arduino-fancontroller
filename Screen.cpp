@@ -36,18 +36,19 @@ void Screen::showFanSpeed(int speed) {
 }
 
 // Show temperature
-void Screen::showTemperature(int temperature, int sensor) {
+void Screen::showTemperature(float temperature, int sensor) {
     int col = 0;
+    int tmp = round(temperature);
 
     this->display->setCursor(0, 0);
 
-    if (temperature < 10) {
+    if (tmp < 10) {
         this->display->print(" ");
         col = 1;
     }
 
     this->display->setCursor(0, col);
-    this->display->print(temperature);
+    this->display->print(tmp);
     
     byte rawData;
     rawData = B11100011;
