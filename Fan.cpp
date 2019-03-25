@@ -13,7 +13,7 @@ Fan::Fan(int fanPwmPin, int fanRpmPin) {
 void Fan::setup() {
     pinMode(this->fanRpmPin, INPUT_PULLUP);
 
-    this->setSpeedLevel(10);
+    this->setSpeedLevel(30);
 }
 
 // Process
@@ -25,8 +25,11 @@ void Fan::process() {
 int Fan::setSpeedLevel(int percent) {
     if (percent >= 0 && percent <= 100) {
         Serial.print("Setting fan speed at ");
+        Serial.println(percent);
+        
+        Serial.print("##FAN#prc=");
         Serial.print(percent);
-        Serial.print(" %, pwm ");
+        Serial.print("#pwm=");
     
         int pwm = ((percent * 255) / 100);
 
@@ -34,7 +37,8 @@ int Fan::setSpeedLevel(int percent) {
 
         this->currentSpeedLevel = percent;
 
-        Serial.println(pwm);
+        Serial.print(pwm);
+        Serial.println("#");
     } else {
         Serial.println("Invalid fan speed (range 0-100)");
     }
@@ -63,4 +67,3 @@ int Fan::getSpeed() {
     
     return rpm;
 }
-

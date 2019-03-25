@@ -18,11 +18,11 @@ void Temperature::setup() {
 
 // Read
 float Temperature::read(int sensor) {
-    Serial.print("Temperature sensor ");
-    Serial.print(sensor);
-    Serial.print(" (pin ");
-    Serial.print(this->sensorPins[sensor]);
-    Serial.print("): ");
+    //Serial.print("Temperature sensor ");
+    //Serial.print(sensor);
+    //Serial.print(" (pin ");
+    //Serial.print(this->sensorPins[sensor]);
+    //Serial.print("): ");
 
     int raw_adc = analogRead(this->sensorPins[sensor]);
     long resistance = 10000*((1024.0 / raw_adc) - 1); 
@@ -37,7 +37,7 @@ float Temperature::read(int sensor) {
         this->highestTemperature = temp;
     }
 
-    Serial.println(temp);
+    //Serial.println(temp);
 
     return temp;
 }
@@ -47,11 +47,19 @@ void Temperature::readAll() {
     Serial.println("Refreshing all temperature sensors:");
         
     this->highestTemperature = 0;
-
+    
+    Serial.print("##TMP#");
+    
     for (int i = 0; i < this->sensorCount; i++) {
-        this->read(i);
+        float tmp = this->read(i);
+        Serial.print(i);
+        Serial.print("=");
+        Serial.print(tmp);
+        Serial.print("#");
     }
 
+    Serial.println();
+    
     Serial.print("Highest temperature: ");
     Serial.println(this->highestTemperature);
 }

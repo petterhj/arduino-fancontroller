@@ -49,6 +49,7 @@ unsigned long previousRotate = 0;
 unsigned long previousTempRefresh = 0;
 unsigned long previousFanSpeedRefresh = 0;
 unsigned long previousFanSpeedChange = 0;
+String scommand;
 
 // Modules
 Rotary rotary = Rotary(PIN_ROTARY_A, PIN_ROTARY_B);
@@ -80,7 +81,17 @@ void setup() {
 void loop() {
     // Timer
     long currentMillis = millis();
-        
+
+    // Serial command
+    while(Serial.available()) {
+      scommand = Serial.readString();
+      if (scommand.substring(0, 7) == "SETFAN="){
+        //Serial.println();
+        long fanPrc = scommand.substring(7).toInt();
+        fan.setSpeedLevel(fanPrc);
+      }
+    }
+    
     //  Rotary control
     // --------------------------------------------------------------------
     unsigned char rotaryDirection = rotary.process();
